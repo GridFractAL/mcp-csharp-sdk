@@ -102,7 +102,7 @@ public class RedisSessionStore : ISessionStore
         {
             throw new InvalidOperationException(
                 $"Redis transaction failed while setting session '{sessionId}'. " +
-                "This typically occurs due to a watched key being modified by another client. " +
+                "This may occur due to connection issues or transaction conflicts. " +
                 "The session was NOT created. The caller should retry the operation.");
         }
     }
@@ -130,7 +130,7 @@ public class RedisSessionStore : ISessionStore
         {
             throw new InvalidOperationException(
                 $"Redis transaction failed while removing session '{sessionId}'. " +
-                "This typically occurs due to a watched key being modified by another client. " +
+                "This may occur due to connection issues or transaction conflicts. " +
                 "The session may still exist. The caller should retry the operation.");
         }
     }

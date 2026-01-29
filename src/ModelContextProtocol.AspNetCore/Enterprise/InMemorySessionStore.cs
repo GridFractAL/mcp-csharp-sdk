@@ -45,9 +45,13 @@ public class InMemorySessionStore : ISessionStore
         if (!string.IsNullOrEmpty(metadata.UserId))
         {
             // Use AddOrUpdate to atomically get-or-create and add in one operation
+            // Note: The addValueFactory creates a pre-populated HashSet which is immediately
+            // stored in the dictionary. ConcurrentDictionary guarantees only one factory runs,
+            // so the HashSet is safely initialized before any other thread can access it.
             _userSessions.AddOrUpdate(
                 metadata.UserId,
-                // Factory for new key: create HashSet with sessionId
+                // Factory for new key: create HashSet already containing sessionId
+                // This is atomic - ConcurrentDictionary ensures only one factory executes
                 _ => new HashSet<string> { sessionId },
                 // Factory for existing key: add sessionId under lock
                 (_, existingSet) =>

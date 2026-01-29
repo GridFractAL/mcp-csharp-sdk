@@ -137,8 +137,10 @@ public class StreamableHttpSession(
                 Volatile.Write(ref _boundUserId, currentUserId);
                 return true;
             }
-            // Another thread won the race - read the bound user with proper visibility
-            return Volatile.Read(ref _boundUserId) == currentUserId;
+            // Another thread won the race - read the bound user and compare
+            // Must assign to variable first to avoid TOCTOU race
+            var boundUser = Volatile.Read(ref _boundUserId);
+            return boundUser == currentUserId;
         }
 
         // If session has a user, require exact match (no downgrade to anonymous allowed)

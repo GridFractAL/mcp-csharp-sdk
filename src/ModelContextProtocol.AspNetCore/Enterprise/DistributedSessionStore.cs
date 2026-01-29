@@ -11,19 +11,34 @@ namespace ModelContextProtocol.AspNetCore.Enterprise;
 /// <summary>
 /// IDistributedCache-backed session store for distributed MCP server deployments.
 /// Works with Redis, SQL Server, or any IDistributedCache implementation.
-///
-/// Features:
-/// - Session metadata persists across server restarts
-/// - Multiple server instances can share session awareness
-/// - Automatic TTL-based expiration via IDistributedCache
-/// - User session indexing for multi-session lookup
-///
-/// Note: This stores session METADATA only. Live McpServer/transport objects
-/// remain in-memory on the handling server. This store enables:
-/// - Session ID validation on reconnect
-/// - Load balancer session affinity hints
-/// - Graceful session recovery scenarios
 /// </summary>
+/// <remarks>
+/// <para>
+/// <strong>IMPORTANT: Eventual Consistency</strong><br/>
+/// This implementation uses eventual consistency for user session lists.
+/// The IDistributedCache interface does not support atomic read-modify-write operations,
+/// so concurrent modifications to user session lists may result in lost updates (last-write-wins).
+/// </para>
+/// <para>
+/// The session metadata itself (GetAsync/SetAsync) is the authoritative source of truth.
+/// User session lists (GetUserSessionsAsync) are an optimization and may be stale.
+/// For high-concurrency production use, prefer <see cref="RedisSessionStore"/> which
+/// uses atomic Redis SET operations.
+/// </para>
+/// <para>
+/// Features:
+/// <list type="bullet">
+/// <item>Session metadata persists across server restarts</item>
+/// <item>Multiple server instances can share session awareness</item>
+/// <item>Automatic TTL-based expiration via IDistributedCache</item>
+/// <item>User session indexing for multi-session lookup (eventual consistency)</item>
+/// </list>
+/// </para>
+/// <para>
+/// Note: This stores session METADATA only. Live McpServer/transport objects
+/// remain in-memory on the handling server.
+/// </para>
+/// </remarks>
 public class DistributedSessionStore : ISessionStore
 {
     private readonly IDistributedCache _cache;
