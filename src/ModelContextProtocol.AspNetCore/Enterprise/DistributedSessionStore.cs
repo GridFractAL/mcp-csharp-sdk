@@ -182,15 +182,23 @@ public class DistributedSessionStore : ISessionStore
     {
         var userKey = UserSessionsKey(userId);
         
-        // IMPORTANT: IDistributedCache limitations:
-        // 1. No atomic operations - concurrent adds may lose updates (last-write-wins)
-        // 2. No ETag/versioning support - optimistic concurrency not possible
+        // IMPORTANT: IDistributedCache limitations and race conditions:
+        // 1. No atomic operations - read-modify-write is NOT atomic
+        // 2. No ETag/versioning - optimistic concurrency not possible
+        // 3. LOST UPDATE RACE: If two requests concurrently add sessions for the same user:
+        //    - Request A reads: {s1}
+        //    - Request B reads: {s1}
+        //    - Request A writes: {s1, s2}
+        //    - Request B writes: {s1, s3}  <- OVERWRITES, s2 is lost!
         //
-        // Using HashSet<string> for O(1) Contains/Add/Remove operations.
-        // The session metadata (GetAsync) is the authoritative source of truth.
-        // User session lists are an optimization for lookup, not authoritative.
+        // This is acceptable because:
+        // - Session metadata (GetAsync) is the authoritative source of truth
+        // - User session lists are an optimization for lookup, not authoritative
+        // - Lost sessions will be re-added on next touch/activity
+        // - Stale entries are harmless (point to valid or expired sessions)
+        //
         // For high-concurrency production use, prefer RedisSessionStore which
-        // uses atomic Redis SET operations.
+        // uses atomic Redis SET operations (SADD).
         
         var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
 
@@ -198,16 +206,23 @@ public class DistributedSessionStore : ISessionStore
             ? JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.HashSetString) ?? new HashSet<string>()
             : new HashSet<string>();
 
-        // O(1) lookup and add via HashSet
-        if (!sessions.Add(sessionId))
-            return; // Already existed
+        // O(1) add via HashSet (returns false if already existed)
+        var isNew = sessions.Add(sessionId);
 
+        // Always write back to refresh TTL, even if session already existed.
+        // This handles reconnection scenarios where the user sessions key
+        // might otherwise expire prematurely.
         var options = new DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = _defaultTtl
         };
 
-        await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.HashSetString), options, cancellationToken);
+        // Skip write only if nothing changed AND we don't need TTL refresh.
+        // Since we always want TTL refresh on activity, always write.
+        if (isNew || existingJson != null) // Always true, but explicit for clarity
+        {
+            await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.HashSetString), options, cancellationToken);
+        }
         // Note: No verification - accepting eventual consistency
     }
 

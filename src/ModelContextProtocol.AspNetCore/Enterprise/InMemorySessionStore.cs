@@ -105,15 +105,22 @@ public class InMemorySessionStore : ISessionStore
         for (int attempt = 0; attempt < maxRetries; attempt++)
         {
             if (!_sessions.TryGetValue(sessionId, out var metadata))
-                break; // Session doesn't exist
+                return ValueTask.CompletedTask; // Session doesn't exist - nothing to touch
                 
             var updated = metadata with { LastActivityTicks = _timeProvider.GetTimestamp() };
             if (_sessions.TryUpdate(sessionId, updated, metadata))
-                break; // Success
+                return ValueTask.CompletedTask; // Success
                 
             // metadata was concurrently modified, retry with fresh value
         }
-
+        
+        // Retries exhausted due to sustained contention. This is non-fatal:
+        // - Session still exists and remains valid
+        // - LastActivityTicks will be stale but session won't be incorrectly pruned
+        //   (next successful request will update it)
+        // - High contention on a single session implies active usage, so premature
+        //   expiration is unlikely
+        // Logging would be appropriate here if ILogger were injected.
         return ValueTask.CompletedTask;
     }
 

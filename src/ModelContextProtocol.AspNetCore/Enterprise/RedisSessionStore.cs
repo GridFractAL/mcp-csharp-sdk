@@ -103,8 +103,10 @@ public class RedisSessionStore : ISessionStore
             throw new InvalidOperationException(
                 $"Redis transaction failed while setting session '{sessionId}'. " +
                 "This may occur due to connection issues or transaction conflicts. " +
-                "The session was NOT created. Retry is safe and recommended - " +
-                "SetAsync is idempotent for the same sessionId/metadata.");
+                "The session was NOT created. Retry is safe - StringSetAsync overwrites " +
+                "any existing value, so retrying with the same metadata will succeed. " +
+                "Note: if metadata differs between retries (e.g., timestamps), the last " +
+                "write wins.");
         }
     }
 

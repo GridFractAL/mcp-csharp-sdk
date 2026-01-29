@@ -56,12 +56,23 @@ public static class SessionStoreExtensions
         // Register Redis connection lazily if configuration string is provided
         if (!string.IsNullOrEmpty(options.Configuration))
         {
-            // Use Lazy<T> pattern to defer connection until first use
-            // and handle connection failures gracefully
+            // IMPORTANT: AbortOnConnectFail=false means the application will start
+            // even if Redis is unavailable. The first session operation will fail.
+            //
+            // Production recommendations:
+            // 1. Add a startup health check to validate Redis connectivity:
+            //    services.AddHealthChecks().AddRedis(options.Configuration);
+            // 2. Or use IHostedService to verify connection on startup
+            // 3. Monitor Redis connection events via ConnectionMultiplexer events
+            //
+            // We use AbortOnConnectFail=false to allow:
+            // - Graceful degradation in distributed environments
+            // - Automatic reconnection after transient failures
+            // - Container orchestration where Redis may start after the app
             services.AddSingleton<IConnectionMultiplexer>(sp =>
             {
                 var config = ConfigurationOptions.Parse(options.Configuration);
-                config.AbortOnConnectFail = false; // Allow retry on connection failure
+                config.AbortOnConnectFail = false;
                 return ConnectionMultiplexer.Connect(config);
             });
         }
