@@ -41,14 +41,23 @@ public class InMemorySessionStore : ISessionStore
     {
         _sessions[sessionId] = metadata;
 
-        // Track user sessions
+        // Track user sessions with proper synchronization
         if (!string.IsNullOrEmpty(metadata.UserId))
         {
-            var userSessions = _userSessions.GetOrAdd(metadata.UserId, _ => new HashSet<string>());
-            lock (userSessions)
-            {
-                userSessions.Add(sessionId);
-            }
+            // Use AddOrUpdate to atomically get-or-create and add in one operation
+            _userSessions.AddOrUpdate(
+                metadata.UserId,
+                // Factory for new key: create HashSet with sessionId
+                _ => new HashSet<string> { sessionId },
+                // Factory for existing key: add sessionId under lock
+                (_, existingSet) =>
+                {
+                    lock (existingSet)
+                    {
+                        existingSet.Add(sessionId);
+                    }
+                    return existingSet;
+                });
         }
 
         return ValueTask.CompletedTask;

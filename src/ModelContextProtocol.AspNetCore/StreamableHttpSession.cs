@@ -24,6 +24,10 @@ public class StreamableHttpSession(
 
     private int _getRequestStarted;
     private readonly CancellationTokenSource _disposeCts = new();
+    
+    // Enterprise: Track if anonymous session has been upgraded (atomic binding)
+    private UserIdClaim? _boundUserId;
+    private int _upgradeAttempted;
 
     /// <summary>Gets the unique session identifier.</summary>
     public string Id => sessionId;
@@ -36,8 +40,8 @@ public class StreamableHttpSession(
     private StatefulSessionManager SessionManager => sessionManager;
 
     /// <summary>Gets the user ID associated with this session, if any.</summary>
-    /// <remarks>Enterprise: Exposed for session persistence.</remarks>
-    public string? UserId => userId?.Value;
+    /// <remarks>Enterprise: Returns bound user ID if session was upgraded from anonymous.</remarks>
+    public string? UserId => (_boundUserId ?? userId)?.Value;
 
     /// <summary>Gets a cancellation token that is cancelled when the session is closed.</summary>
     public CancellationToken SessionClosed => _disposeCts.Token;
@@ -107,23 +111,36 @@ public class StreamableHttpSession(
     /// </summary>
     /// <remarks>
     /// Security: Anonymous sessions can only be upgraded by the FIRST authenticated request.
+    /// Uses atomic compare-exchange to prevent concurrent upgrade attempts.
     /// Once upgraded, subsequent requests must match the bound user identity.
     /// </remarks>
     public bool HasSameUserId(ClaimsPrincipal user)
     {
         var currentUserId = StreamableHttpHandler.GetUserIdClaim(user);
+        
+        // Get effective user ID (constructor param or bound via upgrade)
+        var effectiveUserId = _boundUserId ?? userId;
 
         // If session was created anonymously and incoming request is also anonymous, allow
-        if (userId is null && currentUserId is null)
+        if (effectiveUserId is null && currentUserId is null)
             return true;
 
-        // If session is anonymous but request is authenticated, this is an upgrade attempt
-        // The caller (StreamableHttpHandler) should bind the user after this returns true
-        if (userId is null && currentUserId is not null)
-            return true;
+        // If session is anonymous but request is authenticated, attempt atomic upgrade
+        if (effectiveUserId is null && currentUserId is not null)
+        {
+            // Atomic: only first upgrade attempt wins
+            if (Interlocked.Exchange(ref _upgradeAttempted, 1) == 0)
+            {
+                // This is the first authenticated request - bind the user
+                _boundUserId = currentUserId;
+                return true;
+            }
+            // Another thread won the race - check if same user
+            return _boundUserId == currentUserId;
+        }
 
         // If session has a user, require exact match (no downgrade to anonymous allowed)
-        return userId == currentUserId;
+        return effectiveUserId == currentUserId;
     }
 
     /// <summary>Disposes this session and releases all resources.</summary>

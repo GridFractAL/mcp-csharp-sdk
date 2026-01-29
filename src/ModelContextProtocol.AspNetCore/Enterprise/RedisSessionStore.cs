@@ -97,7 +97,11 @@ public class RedisSessionStore : ISessionStore
             _ = transaction.KeyExpireAsync(userKey, _defaultTtl);
         }
 
-        await transaction.ExecuteAsync();
+        var committed = await transaction.ExecuteAsync();
+        if (!committed)
+        {
+            throw new InvalidOperationException($"Redis transaction failed while setting session '{sessionId}'. The session state may be inconsistent.");
+        }
     }
 
     public async ValueTask RemoveAsync(string sessionId, CancellationToken cancellationToken = default)
@@ -118,7 +122,11 @@ public class RedisSessionStore : ISessionStore
             _ = transaction.SetRemoveAsync(UserSessionsKey(metadata.UserId), sessionId);
         }
 
-        await transaction.ExecuteAsync();
+        var committed = await transaction.ExecuteAsync();
+        if (!committed)
+        {
+            throw new InvalidOperationException($"Redis transaction failed while removing session '{sessionId}'. The session may not be fully cleaned up.");
+        }
     }
 
     public async ValueTask TouchAsync(string sessionId, CancellationToken cancellationToken = default)

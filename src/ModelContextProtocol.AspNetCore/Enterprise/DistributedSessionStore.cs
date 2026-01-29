@@ -164,49 +164,89 @@ public class DistributedSessionStore : ISessionStore
     private async Task AddToUserSessionsAsync(string userId, string sessionId, CancellationToken cancellationToken)
     {
         var userKey = UserSessionsKey(userId);
-        var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
-
-        var sessions = !string.IsNullOrEmpty(existingJson)
-            ? JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>()
-            : new List<string>();
-
-        if (!sessions.Contains(sessionId))
+        
+        // Note: IDistributedCache doesn't support atomic operations.
+        // In high-concurrency scenarios, there's a small window where concurrent adds
+        // could result in lost updates. For production use with high concurrency,
+        // consider using RedisSessionStore which has atomic set operations.
+        // This implementation uses eventual consistency - the session metadata itself
+        // is the source of truth, and GetUserSessionsAsync can be used to rebuild.
+        
+        const int maxRetries = 3;
+        for (int attempt = 0; attempt < maxRetries; attempt++)
         {
+            var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
+
+            var sessions = !string.IsNullOrEmpty(existingJson)
+                ? JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>()
+                : new List<string>();
+
+            if (sessions.Contains(sessionId))
+                return; // Already added
+
             sessions.Add(sessionId);
+
+            var options = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = _defaultTtl
+            };
+
+            await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.ListString), options, cancellationToken);
+            
+            // Verify write succeeded (basic optimistic concurrency check)
+            var verifyJson = await _cache.GetStringAsync(userKey, cancellationToken);
+            if (!string.IsNullOrEmpty(verifyJson))
+            {
+                var verifySessions = JsonSerializer.Deserialize(verifyJson, EnterpriseJsonContext.Default.ListString);
+                if (verifySessions?.Contains(sessionId) == true)
+                    return; // Success
+            }
+            // Write may have been overwritten, retry
         }
-
-        var options = new DistributedCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = _defaultTtl
-        };
-
-        await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.ListString), options, cancellationToken);
     }
 
     private async Task RemoveFromUserSessionsAsync(string userId, string sessionId, CancellationToken cancellationToken)
     {
         var userKey = UserSessionsKey(userId);
-        var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
-
-        if (string.IsNullOrEmpty(existingJson))
+        
+        // Note: Same eventual consistency caveat as AddToUserSessionsAsync.
+        // In worst case, a stale session ID remains in the list but will be
+        // naturally cleaned up when the list expires or on next access.
+        
+        const int maxRetries = 3;
+        for (int attempt = 0; attempt < maxRetries; attempt++)
         {
-            return;
-        }
+            var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
 
-        var sessions = JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>();
-        sessions.Remove(sessionId);
+            if (string.IsNullOrEmpty(existingJson))
+                return;
 
-        if (sessions.Count > 0)
-        {
-            var options = new DistributedCacheEntryOptions
+            var sessions = JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>();
+            
+            if (!sessions.Contains(sessionId))
+                return; // Already removed
+                
+            sessions.Remove(sessionId);
+
+            if (sessions.Count > 0)
             {
-                AbsoluteExpirationRelativeToNow = _defaultTtl
-            };
-            await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.ListString), options, cancellationToken);
-        }
-        else
-        {
-            await _cache.RemoveAsync(userKey, cancellationToken);
+                var options = new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = _defaultTtl
+                };
+                await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.ListString), options, cancellationToken);
+            }
+            else
+            {
+                await _cache.RemoveAsync(userKey, cancellationToken);
+                return; // Empty list removed
+            }
+            
+            // Verify write succeeded
+            var verifyJson = await _cache.GetStringAsync(userKey, cancellationToken);
+            if (string.IsNullOrEmpty(verifyJson) || 
+                !(JsonSerializer.Deserialize(verifyJson, EnterpriseJsonContext.Default.ListString)?.Contains(sessionId) == true))
+                return; // Success - session removed or list gone
         }
     }
 
