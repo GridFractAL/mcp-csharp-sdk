@@ -100,7 +100,10 @@ public class RedisSessionStore : ISessionStore
         var committed = await transaction.ExecuteAsync();
         if (!committed)
         {
-            throw new InvalidOperationException($"Redis transaction failed while setting session '{sessionId}'. The session state may be inconsistent.");
+            throw new InvalidOperationException(
+                $"Redis transaction failed while setting session '{sessionId}'. " +
+                "This typically occurs due to a watched key being modified by another client. " +
+                "The session was NOT created. The caller should retry the operation.");
         }
     }
 
@@ -125,7 +128,10 @@ public class RedisSessionStore : ISessionStore
         var committed = await transaction.ExecuteAsync();
         if (!committed)
         {
-            throw new InvalidOperationException($"Redis transaction failed while removing session '{sessionId}'. The session may not be fully cleaned up.");
+            throw new InvalidOperationException(
+                $"Redis transaction failed while removing session '{sessionId}'. " +
+                "This typically occurs due to a watched key being modified by another client. " +
+                "The session may still exist. The caller should retry the operation.");
         }
     }
 

@@ -41,7 +41,7 @@ public class StreamableHttpSession(
 
     /// <summary>Gets the user ID associated with this session, if any.</summary>
     /// <remarks>Enterprise: Returns bound user ID if session was upgraded from anonymous.</remarks>
-    public string? UserId => (_boundUserId ?? userId)?.Value;
+    public string? UserId => (Volatile.Read(ref _boundUserId) ?? userId)?.Value;
 
     /// <summary>Gets a cancellation token that is cancelled when the session is closed.</summary>
     public CancellationToken SessionClosed => _disposeCts.Token;
@@ -119,7 +119,8 @@ public class StreamableHttpSession(
         var currentUserId = StreamableHttpHandler.GetUserIdClaim(user);
         
         // Get effective user ID (constructor param or bound via upgrade)
-        var effectiveUserId = _boundUserId ?? userId;
+        // Use Volatile.Read to ensure visibility of writes from other threads
+        var effectiveUserId = Volatile.Read(ref _boundUserId) ?? userId;
 
         // If session was created anonymously and incoming request is also anonymous, allow
         if (effectiveUserId is null && currentUserId is null)
@@ -132,11 +133,12 @@ public class StreamableHttpSession(
             if (Interlocked.Exchange(ref _upgradeAttempted, 1) == 0)
             {
                 // This is the first authenticated request - bind the user
-                _boundUserId = currentUserId;
+                // Use Volatile.Write to ensure visibility to other threads
+                Volatile.Write(ref _boundUserId, currentUserId);
                 return true;
             }
-            // Another thread won the race - check if same user
-            return _boundUserId == currentUserId;
+            // Another thread won the race - read the bound user with proper visibility
+            return Volatile.Read(ref _boundUserId) == currentUserId;
         }
 
         // If session has a user, require exact match (no downgrade to anonymous allowed)

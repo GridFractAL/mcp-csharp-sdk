@@ -81,12 +81,18 @@ public class InMemorySessionStore : ISessionStore
 
     public ValueTask TouchAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        if (_sessions.TryGetValue(sessionId, out var metadata))
+        // Retry loop to handle concurrent modifications
+        const int maxRetries = 3;
+        for (int attempt = 0; attempt < maxRetries; attempt++)
         {
-            // Use atomic update with 'with' expression for thread-safety
-            _sessions.TryUpdate(sessionId, 
-                metadata with { LastActivityTicks = _timeProvider.GetTimestamp() }, 
-                metadata);
+            if (!_sessions.TryGetValue(sessionId, out var metadata))
+                break; // Session doesn't exist
+                
+            var updated = metadata with { LastActivityTicks = _timeProvider.GetTimestamp() };
+            if (_sessions.TryUpdate(sessionId, updated, metadata))
+                break; // Success
+                
+            // metadata was concurrently modified, retry with fresh value
         }
 
         return ValueTask.CompletedTask;

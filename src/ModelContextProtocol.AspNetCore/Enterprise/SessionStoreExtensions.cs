@@ -27,6 +27,10 @@ public static class SessionStoreExtensions
     /// </summary>
     /// <param name="services">Service collection</param>
     /// <param name="configure">Configure Redis session store options</param>
+    /// <remarks>
+    /// Redis connection is established lazily on first use. For more control over
+    /// connection lifecycle, register your own IConnectionMultiplexer before calling this method.
+    /// </remarks>
     public static IServiceCollection AddMcpRedisSessionStore(
         this IServiceCollection services,
         Action<RedisSessionStoreOptions> configure)
@@ -34,11 +38,17 @@ public static class SessionStoreExtensions
         var options = new RedisSessionStoreOptions();
         configure(options);
 
-        // Register Redis connection if configuration string is provided
+        // Register Redis connection lazily if configuration string is provided
         if (!string.IsNullOrEmpty(options.Configuration))
         {
+            // Use Lazy<T> pattern to defer connection until first use
+            // and handle connection failures gracefully
             services.AddSingleton<IConnectionMultiplexer>(sp =>
-                ConnectionMultiplexer.Connect(options.Configuration));
+            {
+                var config = ConfigurationOptions.Parse(options.Configuration);
+                config.AbortOnConnectFail = false; // Allow retry on connection failure
+                return ConnectionMultiplexer.Connect(config);
+            });
         }
 
         services.AddSingleton<ISessionStore>(sp =>
