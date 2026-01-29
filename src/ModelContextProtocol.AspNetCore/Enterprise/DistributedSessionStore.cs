@@ -131,8 +131,8 @@ public class DistributedSessionStore : ISessionStore
         }
 
         // Update last activity and refresh TTL
-        metadata.LastActivityTicks = _timeProvider.GetTimestamp();
-        var updatedJson = JsonSerializer.Serialize(metadata, EnterpriseJsonContext.Default.SessionMetadata);
+        var updatedMetadata = metadata with { LastActivityTicks = _timeProvider.GetTimestamp() };
+        var updatedJson = JsonSerializer.Serialize(updatedMetadata, EnterpriseJsonContext.Default.SessionMetadata);
 
         var options = new DistributedCacheEntryOptions
         {

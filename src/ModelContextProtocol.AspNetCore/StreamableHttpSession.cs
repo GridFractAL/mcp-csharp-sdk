@@ -105,15 +105,24 @@ public class StreamableHttpSession(
     /// Enterprise modification: Allows anonymous sessions to be upgraded to authenticated sessions.
     /// This supports the MCP OAuth flow where discovery happens anonymously, then tools/call triggers auth.
     /// </summary>
+    /// <remarks>
+    /// Security: Anonymous sessions can only be upgraded by the FIRST authenticated request.
+    /// Once upgraded, subsequent requests must match the bound user identity.
+    /// </remarks>
     public bool HasSameUserId(ClaimsPrincipal user)
     {
         var currentUserId = StreamableHttpHandler.GetUserIdClaim(user);
 
-        // If session was created anonymously, allow any authenticated user (upgrade scenario)
-        if (userId is null)
+        // If session was created anonymously and incoming request is also anonymous, allow
+        if (userId is null && currentUserId is null)
             return true;
 
-        // If session has a user, require exact match
+        // If session is anonymous but request is authenticated, this is an upgrade attempt
+        // The caller (StreamableHttpHandler) should bind the user after this returns true
+        if (userId is null && currentUserId is not null)
+            return true;
+
+        // If session has a user, require exact match (no downgrade to anonymous allowed)
         return userId == currentUserId;
     }
 

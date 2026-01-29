@@ -24,9 +24,11 @@
     <ProjectReference Include="..\ModelContextProtocol\ModelContextProtocol.csproj" />
   </ItemGroup>
 
-  <!-- Enterprise: Session store dependencies -->
+  <!-- Enterprise: Session store dependencies (optional - only needed for distributed session stores) -->
   <ItemGroup>
-    <PackageReference Include="StackExchange.Redis" />
+    <!-- Redis support is optional - only required if using RedisSessionStore -->
+    <PackageReference Include="StackExchange.Redis" PrivateAssets="compile" />
+    <!-- Caching abstractions needed for DistributedSessionStore -->
     <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
   </ItemGroup>
 

@@ -76,13 +76,15 @@ public record SessionMetadata
 
     /// <summary>
     /// Last activity timestamp (ticks from TimeProvider).
+    /// Use record 'with' expression to update: metadata = metadata with { LastActivityTicks = newValue }
     /// </summary>
-    public long LastActivityTicks { get; set; }
+    public long LastActivityTicks { get; init; }
 
     /// <summary>
     /// Whether the session is currently active.
+    /// Use record 'with' expression to update: metadata = metadata with { IsActive = newValue }
     /// </summary>
-    public bool IsActive { get; set; }
+    public bool IsActive { get; init; }
 
     /// <summary>
     /// Optional custom data for the session.

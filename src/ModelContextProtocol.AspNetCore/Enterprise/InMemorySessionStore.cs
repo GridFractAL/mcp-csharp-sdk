@@ -74,7 +74,10 @@ public class InMemorySessionStore : ISessionStore
     {
         if (_sessions.TryGetValue(sessionId, out var metadata))
         {
-            metadata.LastActivityTicks = _timeProvider.GetTimestamp();
+            // Use atomic update with 'with' expression for thread-safety
+            _sessions.TryUpdate(sessionId, 
+                metadata with { LastActivityTicks = _timeProvider.GetTimestamp() }, 
+                metadata);
         }
 
         return ValueTask.CompletedTask;
@@ -96,7 +99,7 @@ public class InMemorySessionStore : ISessionStore
     public ValueTask<int> PruneExpiredAsync(TimeSpan idleTimeout, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetTimestamp();
-        var idleTimeoutTicks = (long)(idleTimeout.TotalSeconds * TimeProvider.System.TimestampFrequency);
+        var idleTimeoutTicks = (long)(idleTimeout.TotalSeconds * _timeProvider.TimestampFrequency);
         var pruned = 0;
 
         foreach (var kvp in _sessions)

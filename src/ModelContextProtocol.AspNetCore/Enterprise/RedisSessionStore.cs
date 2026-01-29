@@ -72,7 +72,7 @@ public class RedisSessionStore : ISessionStore
             return null;
         }
 
-        return JsonSerializer.Deserialize((string)json!, EnterpriseJsonContext.Default.SessionMetadata);
+        return JsonSerializer.Deserialize(json.ToString(), EnterpriseJsonContext.Default.SessionMetadata);
     }
 
     public async ValueTask SetAsync(string sessionId, SessionMetadata metadata, CancellationToken cancellationToken = default)
@@ -133,15 +133,15 @@ public class RedisSessionStore : ISessionStore
             return;
         }
 
-        var metadata = JsonSerializer.Deserialize((string)json!, EnterpriseJsonContext.Default.SessionMetadata);
+        var metadata = JsonSerializer.Deserialize(json.ToString(), EnterpriseJsonContext.Default.SessionMetadata);
         if (metadata == null)
         {
             return;
         }
 
         // Update last activity and refresh TTL
-        metadata.LastActivityTicks = _timeProvider.GetTimestamp();
-        var updatedJson = JsonSerializer.Serialize(metadata, EnterpriseJsonContext.Default.SessionMetadata);
+        var updatedMetadata = metadata with { LastActivityTicks = _timeProvider.GetTimestamp() };
+        var updatedJson = JsonSerializer.Serialize(updatedMetadata, EnterpriseJsonContext.Default.SessionMetadata);
 
         await db.StringSetAsync(key, updatedJson, _defaultTtl);
     }
