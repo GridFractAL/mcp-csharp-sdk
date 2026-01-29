@@ -7,14 +7,25 @@ namespace ModelContextProtocol.AspNetCore.Enterprise;
 
 /// <summary>
 /// Default in-memory session store implementation.
-///
+/// </summary>
+/// <remarks>
+/// <para>
 /// This provides the same behavior as the upstream SDK's ConcurrentDictionary approach,
 /// but implements the ISessionStore interface for consistency.
-///
+/// </para>
+/// <para>
+/// <strong>Thread Safety:</strong> All operations are thread-safe. The locking strategy
+/// acquires at most ONE HashSet lock per operation, preventing deadlock scenarios.
+/// No method acquires multiple locks simultaneously.
+/// </para>
+/// <para>
 /// Limitations:
-/// - Sessions are lost on server restart
-/// - Not suitable for distributed deployments (use RedisSessionStore instead)
-/// </summary>
+/// <list type="bullet">
+/// <item>Sessions are lost on server restart</item>
+/// <item>Not suitable for distributed deployments (use <see cref="RedisSessionStore"/> instead)</item>
+/// </list>
+/// </para>
+/// </remarks>
 public class InMemorySessionStore : ISessionStore
 {
     private readonly ConcurrentDictionary<string, SessionMetadata> _sessions = new();
@@ -85,7 +96,11 @@ public class InMemorySessionStore : ISessionStore
 
     public ValueTask TouchAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        // Retry loop to handle concurrent modifications
+        // Retry loop to handle concurrent modifications via optimistic concurrency.
+        // 3 retries chosen as balance between contention handling and avoiding spin:
+        // - 1 retry handles most single-contention scenarios
+        // - 2-3 retries handle brief bursts of concurrent updates
+        // - Beyond 3 indicates sustained heavy contention (unlikely for touch operations)
         const int maxRetries = 3;
         for (int attempt = 0; attempt < maxRetries; attempt++)
         {

@@ -40,7 +40,12 @@ public class StreamableHttpSession(
     private StatefulSessionManager SessionManager => sessionManager;
 
     /// <summary>Gets the user ID associated with this session, if any.</summary>
-    /// <remarks>Enterprise: Returns bound user ID if session was upgraded from anonymous.</remarks>
+    /// <remarks>
+    /// Enterprise: Returns bound user ID if session was upgraded from anonymous.
+    /// Note: This property uses eventual consistency. If read multiple times during
+    /// an active upgrade race, it may briefly return different values. For authoritative
+    /// user binding, use <see cref="HasSameUserId"/> which handles synchronization.
+    /// </remarks>
     public string? UserId => (Volatile.Read(ref _boundUserId) ?? userId)?.Value;
 
     /// <summary>Gets a cancellation token that is cancelled when the session is closed.</summary>

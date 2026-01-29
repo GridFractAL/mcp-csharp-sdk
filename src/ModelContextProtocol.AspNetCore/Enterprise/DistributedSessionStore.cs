@@ -180,12 +180,13 @@ public class DistributedSessionStore : ISessionStore
     {
         var userKey = UserSessionsKey(userId);
         
-        // IMPORTANT: IDistributedCache doesn't support atomic operations.
-        // This implementation accepts eventual consistency:
-        // - Concurrent adds may result in lost updates (last-write-wins)
-        // - The session metadata (GetAsync) is the source of truth
-        // - User session lists are an optimization for lookup, not authoritative
-        // 
+        // IMPORTANT: IDistributedCache limitations:
+        // 1. No atomic operations - concurrent adds may lose updates (last-write-wins)
+        // 2. No ETag/versioning support - optimistic concurrency not possible
+        // 3. O(n) Contains check - acceptable for typical session counts per user
+        //
+        // The session metadata (GetAsync) is the authoritative source of truth.
+        // User session lists are an optimization for lookup, not authoritative.
         // For high-concurrency production use, prefer RedisSessionStore which
         // uses atomic Redis SET operations.
         
@@ -195,6 +196,7 @@ public class DistributedSessionStore : ISessionStore
             ? JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>()
             : new List<string>();
 
+        // O(n) lookup - acceptable for typical user session counts (usually < 10)
         if (sessions.Contains(sessionId))
             return; // Already added
 

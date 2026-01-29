@@ -28,8 +28,23 @@ public static class SessionStoreExtensions
     /// <param name="services">Service collection</param>
     /// <param name="configure">Configure Redis session store options</param>
     /// <remarks>
-    /// Redis connection is established lazily on first use. For more control over
-    /// connection lifecycle, register your own IConnectionMultiplexer before calling this method.
+    /// <para>
+    /// <strong>Connection Lifecycle:</strong> Redis connection is established lazily on first use,
+    /// not during application startup. This means connection failures won't surface until the
+    /// first request attempts to use the session store.
+    /// </para>
+    /// <para>
+    /// <strong>Startup Validation:</strong> To validate Redis connectivity at startup, either:
+    /// <list type="bullet">
+    /// <item>Register your own <see cref="IConnectionMultiplexer"/> before calling this method</item>
+    /// <item>Use a health check to verify Redis connectivity during startup</item>
+    /// <item>Call <c>GetRequiredService&lt;IConnectionMultiplexer&gt;()</c> in a hosted service</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <strong>Resilience:</strong> The connection uses <c>AbortOnConnectFail=false</c>,
+    /// allowing automatic retry on transient connection failures.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddMcpRedisSessionStore(
         this IServiceCollection services,

@@ -103,7 +103,8 @@ public class RedisSessionStore : ISessionStore
             throw new InvalidOperationException(
                 $"Redis transaction failed while setting session '{sessionId}'. " +
                 "This may occur due to connection issues or transaction conflicts. " +
-                "The session was NOT created. The caller should retry the operation.");
+                "The session was NOT created. Retry is safe and recommended - " +
+                "SetAsync is idempotent for the same sessionId/metadata.");
         }
     }
 
@@ -131,7 +132,7 @@ public class RedisSessionStore : ISessionStore
             throw new InvalidOperationException(
                 $"Redis transaction failed while removing session '{sessionId}'. " +
                 "This may occur due to connection issues or transaction conflicts. " +
-                "The session may still exist. The caller should retry the operation.");
+                "The session may still exist. Retry is safe - RemoveAsync is idempotent.");
         }
     }
 
