@@ -166,7 +166,9 @@ public class DistributedSessionStore : ISessionStore
             return Array.Empty<string>();
         }
 
-        return JsonSerializer.Deserialize(json, EnterpriseJsonContext.Default.ListString) ?? new List<string>();
+        // Deserialize HashSet, return as list (interface requires IReadOnlyList)
+        var sessions = JsonSerializer.Deserialize(json, EnterpriseJsonContext.Default.HashSetString);
+        return sessions?.ToList() ?? [];
     }
 
     public ValueTask<int> PruneExpiredAsync(TimeSpan idleTimeout, CancellationToken cancellationToken = default)
@@ -183,8 +185,8 @@ public class DistributedSessionStore : ISessionStore
         // IMPORTANT: IDistributedCache limitations:
         // 1. No atomic operations - concurrent adds may lose updates (last-write-wins)
         // 2. No ETag/versioning support - optimistic concurrency not possible
-        // 3. O(n) Contains check - acceptable for typical session counts per user
         //
+        // Using HashSet<string> for O(1) Contains/Add/Remove operations.
         // The session metadata (GetAsync) is the authoritative source of truth.
         // User session lists are an optimization for lookup, not authoritative.
         // For high-concurrency production use, prefer RedisSessionStore which
@@ -193,21 +195,19 @@ public class DistributedSessionStore : ISessionStore
         var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
 
         var sessions = !string.IsNullOrEmpty(existingJson)
-            ? JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>()
-            : new List<string>();
+            ? JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.HashSetString) ?? new HashSet<string>()
+            : new HashSet<string>();
 
-        // O(n) lookup - acceptable for typical user session counts (usually < 10)
-        if (sessions.Contains(sessionId))
-            return; // Already added
-
-        sessions.Add(sessionId);
+        // O(1) lookup and add via HashSet
+        if (!sessions.Add(sessionId))
+            return; // Already existed
 
         var options = new DistributedCacheEntryOptions
         {
             AbsoluteExpirationRelativeToNow = _defaultTtl
         };
 
-        await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.ListString), options, cancellationToken);
+        await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.HashSetString), options, cancellationToken);
         // Note: No verification - accepting eventual consistency
     }
 
@@ -216,7 +216,7 @@ public class DistributedSessionStore : ISessionStore
         var userKey = UserSessionsKey(userId);
         
         // Same eventual consistency model as AddToUserSessionsAsync.
-        // Stale session IDs in the list are harmless - they point to
+        // Stale session IDs in the set are harmless - they point to
         // non-existent sessions and will be naturally cleaned up on TTL expiry.
         
         var existingJson = await _cache.GetStringAsync(userKey, cancellationToken);
@@ -224,12 +224,11 @@ public class DistributedSessionStore : ISessionStore
         if (string.IsNullOrEmpty(existingJson))
             return;
 
-        var sessions = JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.ListString) ?? new List<string>();
+        var sessions = JsonSerializer.Deserialize(existingJson, EnterpriseJsonContext.Default.HashSetString) ?? new HashSet<string>();
         
-        if (!sessions.Contains(sessionId))
-            return; // Already removed
-            
-        sessions.Remove(sessionId);
+        // O(1) remove via HashSet
+        if (!sessions.Remove(sessionId))
+            return; // Wasn't in set
 
         if (sessions.Count > 0)
         {
@@ -237,7 +236,7 @@ public class DistributedSessionStore : ISessionStore
             {
                 AbsoluteExpirationRelativeToNow = _defaultTtl
             };
-            await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.ListString), options, cancellationToken);
+            await _cache.SetStringAsync(userKey, JsonSerializer.Serialize(sessions, EnterpriseJsonContext.Default.HashSetString), options, cancellationToken);
         }
         else
         {

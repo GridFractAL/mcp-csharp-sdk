@@ -10,6 +10,7 @@ namespace ModelContextProtocol.AspNetCore.Enterprise;
 /// Required for AOT/trimming compatibility.
 /// </summary>
 [JsonSerializable(typeof(SessionMetadata))]
+[JsonSerializable(typeof(HashSet<string>), TypeInfoPropertyName = "HashSetString")]
 [JsonSerializable(typeof(List<string>), TypeInfoPropertyName = "ListString")]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSourceGenerationOptions(
