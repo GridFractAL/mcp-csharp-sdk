@@ -4,7 +4,14 @@ using System.Security.Claims;
 
 namespace ModelContextProtocol.AspNetCore;
 
-internal sealed class StreamableHttpSession(
+// Modified by GridFractAL - Enterprise fork
+// Changes: Unsealed class (internal sealed -> public) to allow extension
+
+/// <summary>
+/// Represents a single MCP session over HTTP.
+/// Enterprise fork: Class is public (not internal sealed) to allow extension.
+/// </summary>
+public class StreamableHttpSession(
     string sessionId,
     StreamableHttpServerTransport transport,
     McpServer server,
@@ -18,17 +25,33 @@ internal sealed class StreamableHttpSession(
     private int _getRequestStarted;
     private readonly CancellationTokenSource _disposeCts = new();
 
+    /// <summary>Gets the unique session identifier.</summary>
     public string Id => sessionId;
+    
+    /// <summary>Gets the HTTP transport for this session.</summary>
     public StreamableHttpServerTransport Transport => transport;
+    
+    /// <summary>Gets the MCP server instance for this session.</summary>
     public McpServer Server => server;
     private StatefulSessionManager SessionManager => sessionManager;
 
+    /// <summary>Gets the user ID associated with this session, if any.</summary>
+    /// <remarks>Enterprise: Exposed for session persistence.</remarks>
+    public string? UserId => userId?.Value;
+
+    /// <summary>Gets a cancellation token that is cancelled when the session is closed.</summary>
     public CancellationToken SessionClosed => _disposeCts.Token;
+    
+    /// <summary>Gets whether the session is currently active.</summary>
     public bool IsActive => !SessionClosed.IsCancellationRequested && _referenceCount > 0;
+    
+    /// <summary>Gets the timestamp of the last activity on this session.</summary>
     public long LastActivityTicks { get; private set; } = sessionManager.TimeProvider.GetTimestamp();
 
+    /// <summary>Gets or sets the task running the MCP server.</summary>
     public Task ServerRunTask { get; set; } = Task.CompletedTask;
 
+    /// <summary>Acquires a reference to this session, preventing it from being disposed.</summary>
     public async ValueTask<IAsyncDisposable> AcquireReferenceAsync(CancellationToken cancellationToken)
     {
         // The StreamableHttpSession is not stored between requests in stateless mode. Instead, the session is recreated from the MCP-Session-Id.
@@ -74,9 +97,27 @@ internal sealed class StreamableHttpSession(
         return new UnreferenceDisposable(this);
     }
 
+    /// <summary>Attempts to mark a GET request as started. Returns true if this is the first GET request.</summary>
     public bool TryStartGetRequest() => Interlocked.Exchange(ref _getRequestStarted, 1) == 0;
-    public bool HasSameUserId(ClaimsPrincipal user) => userId == StreamableHttpHandler.GetUserIdClaim(user);
 
+    /// <summary>
+    /// Checks if the current request user matches the session user.
+    /// Enterprise modification: Allows anonymous sessions to be upgraded to authenticated sessions.
+    /// This supports the MCP OAuth flow where discovery happens anonymously, then tools/call triggers auth.
+    /// </summary>
+    public bool HasSameUserId(ClaimsPrincipal user)
+    {
+        var currentUserId = StreamableHttpHandler.GetUserIdClaim(user);
+
+        // If session was created anonymously, allow any authenticated user (upgrade scenario)
+        if (userId is null)
+            return true;
+
+        // If session has a user, require exact match
+        return userId == currentUserId;
+    }
+
+    /// <summary>Disposes this session and releases all resources.</summary>
     public async ValueTask DisposeAsync()
     {
         var wasIdle = false;

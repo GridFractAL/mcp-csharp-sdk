@@ -7,7 +7,14 @@ using Microsoft.Extensions.Options;
 
 namespace ModelContextProtocol.AspNetCore;
 
-internal sealed partial class StatefulSessionManager(
+// Modified by GridFractAL - Enterprise fork
+// Changes: Unsealed class (internal sealed -> public) to allow extension
+
+/// <summary>
+/// Manages stateful MCP sessions over HTTP.
+/// Enterprise fork: Class is public (not internal sealed) to allow extension.
+/// </summary>
+public partial class StatefulSessionManager(
     IOptions<HttpServerTransportOptions> httpServerTransportOptions,
     ILogger<StatefulSessionManager> logger)
 {
@@ -28,14 +35,22 @@ internal sealed partial class StatefulSessionManager(
 
     private long _currentIdleSessionCount;
 
+    /// <summary>Gets the time provider used by this session manager.</summary>
     public TimeProvider TimeProvider => _timeProvider;
 
+    /// <summary>Increments the idle session counter.</summary>
     public void IncrementIdleSessionCount() => Interlocked.Increment(ref _currentIdleSessionCount);
+    
+    /// <summary>Decrements the idle session counter.</summary>
     public void DecrementIdleSessionCount() => Interlocked.Decrement(ref _currentIdleSessionCount);
 
+    /// <summary>Tries to get a session by its key.</summary>
     public bool TryGetValue(string key, [NotNullWhen(true)] out StreamableHttpSession? value) => _sessions.TryGetValue(key, out value);
+    
+    /// <summary>Tries to remove a session by its key.</summary>
     public bool TryRemove(string key, [NotNullWhen(true)] out StreamableHttpSession? value) => _sessions.TryRemove(key, out value);
 
+    /// <summary>Starts a new session, potentially pruning idle sessions if the limit is reached.</summary>
     public async ValueTask StartNewSessionAsync(StreamableHttpSession newSession, CancellationToken cancellationToken)
     {
         while (!TryAddSessionImmediately(newSession))

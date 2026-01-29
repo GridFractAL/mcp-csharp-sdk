@@ -24,4 +24,10 @@
     <ProjectReference Include="..\ModelContextProtocol\ModelContextProtocol.csproj" />
   </ItemGroup>
 
+  <!-- Enterprise: Session store dependencies -->
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
+  </ItemGroup>
+
 </Project>
