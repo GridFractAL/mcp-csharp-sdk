@@ -1,6 +1,31 @@
-# MCP C# SDK
+# MCP C# SDK (GridFractAL Fork)
 
 [![NuGet preview version](https://img.shields.io/nuget/vpre/ModelContextProtocol.svg)](https://www.nuget.org/packages/ModelContextProtocol/absoluteLatest)
+
+This is a **minimal fork** of the official [Model Context Protocol C# SDK](https://github.com/modelcontextprotocol/csharp-sdk) for GridFractAL enterprise extensions.
+
+## Fork Intent
+
+This fork makes **minimal changes** to enable enterprise extensibility without maintaining a divergent codebase:
+
+| File | Change | Purpose |
+|------|--------|---------|
+| `StatefulSessionManager.cs` | `internal sealed` → `public` | Allow custom session store implementations |
+| `StreamableHttpSession.cs` | `internal sealed` → `public`, OAuth upgrade | Enable distributed session tracking + MCP OAuth flow |
+| `UserIdClaim.cs` | `internal sealed` → `public sealed` | Expose for session-user binding in enterprise stores |
+
+**Enterprise implementations** (Redis/MongoDB session stores, etc.) live in `GridFractal.MCP.Infrastructure`, not in this fork.
+
+### OAuth Session Upgrade
+
+The `HasSameUserId` method supports the MCP OAuth flow where sessions start anonymous and upgrade to authenticated:
+- Anonymous session + anonymous request → allowed
+- Anonymous session + authenticated request → atomic upgrade (first auth wins)
+- Authenticated session → exact match required (no downgrade)
+
+---
+
+## Original SDK Documentation
 
 The official C# SDK for the [Model Context Protocol](https://modelcontextprotocol.io/), enabling .NET applications, services, and libraries to implement and interact with MCP clients and servers. Please visit our [API documentation](https://modelcontextprotocol.github.io/csharp-sdk/api/ModelContextProtocol.html) for more details on available functionality.
 

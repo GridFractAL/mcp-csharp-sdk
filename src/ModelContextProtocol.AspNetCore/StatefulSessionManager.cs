@@ -7,7 +7,13 @@ using Microsoft.Extensions.Options;
 
 namespace ModelContextProtocol.AspNetCore;
 
-internal sealed partial class StatefulSessionManager(
+/// <summary>
+/// Manages stateful MCP sessions over HTTP, handling session lifecycle and idle session pruning.
+/// </summary>
+/// <remarks>
+/// This class is unsealed to allow enterprise extensions (e.g., distributed session stores).
+/// </remarks>
+public partial class StatefulSessionManager(
     IOptions<HttpServerTransportOptions> httpServerTransportOptions,
     ILogger<StatefulSessionManager> logger)
 {
@@ -28,14 +34,43 @@ internal sealed partial class StatefulSessionManager(
 
     private long _currentIdleSessionCount;
 
+    /// <summary>
+    /// Gets the time provider used for session timeout calculations.
+    /// </summary>
     public TimeProvider TimeProvider => _timeProvider;
 
+    /// <summary>
+    /// Increments the count of idle sessions being tracked.
+    /// </summary>
     public void IncrementIdleSessionCount() => Interlocked.Increment(ref _currentIdleSessionCount);
+
+    /// <summary>
+    /// Decrements the count of idle sessions being tracked.
+    /// </summary>
     public void DecrementIdleSessionCount() => Interlocked.Decrement(ref _currentIdleSessionCount);
 
+    /// <summary>
+    /// Attempts to get a session by its ID.
+    /// </summary>
+    /// <param name="key">The session ID to look up.</param>
+    /// <param name="value">The session if found; otherwise, null.</param>
+    /// <returns>true if the session was found; otherwise, false.</returns>
     public bool TryGetValue(string key, [NotNullWhen(true)] out StreamableHttpSession? value) => _sessions.TryGetValue(key, out value);
+
+    /// <summary>
+    /// Attempts to remove a session by its ID.
+    /// </summary>
+    /// <param name="key">The session ID to remove.</param>
+    /// <param name="value">The removed session if found; otherwise, null.</param>
+    /// <returns>true if the session was removed; otherwise, false.</returns>
     public bool TryRemove(string key, [NotNullWhen(true)] out StreamableHttpSession? value) => _sessions.TryRemove(key, out value);
 
+    /// <summary>
+    /// Creates and starts a new session, pruning idle sessions if necessary.
+    /// </summary>
+    /// <param name="newSession">The session to start.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async ValueTask StartNewSessionAsync(StreamableHttpSession newSession, CancellationToken cancellationToken)
     {
         while (!TryAddSessionImmediately(newSession))
